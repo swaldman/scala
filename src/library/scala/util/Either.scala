@@ -682,7 +682,7 @@ object Either {
     *  To enable right-biasing, you first define a bias, typically via the [[Either.RightBias.withEmptyToken$ Either.RightBias.withEmptyToken]]
     *  factory.
     * {{{
-    *     // will impart a right-bias suitable to Either[A,String]
+    *     // will impart a right-bias suitable to Either[String,B]
     *     val RightBias = Either.RightBias.withEmptyToken("EMPTY")
     *     import RightBias._
     * }}}

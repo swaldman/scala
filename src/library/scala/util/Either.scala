@@ -670,7 +670,6 @@ object Either {
     *   def xget                                         : A                
     *   def xgetOrElse[AA>:A]( or : =>AA )               : AA               
     *   def xmap[Z]( f : A => Z )                        : Either[Z,B]      
-    *   def replaceIfEmpty[AA>:A]( replacement : =>AA )  : Either[AA,B]     
     *   def isEmpty                                      : Boolean          
     *   def isLeftBiased                                 : Boolean          
     *   def isRightBiased                                : Boolean          
@@ -861,7 +860,6 @@ object Either {
       def xget                                        : A                 = DefaultThrowingOps.xget( target );
       def xgetOrElse[AA>:A]( or : =>AA )              : AA                = DefaultThrowingOps.xgetOrElse[A,AA,B]( target )( or );
       def xmap[Z]( f : A => Z )                       : Either[Z,B]       = DefaultThrowingOps.xmap( target )( f );
-      def replaceIfEmpty[AA>:A]( replacement : =>AA ) : Either[AA,B]      = DefaultThrowingOps.replaceIfEmpty[A,AA,B]( target )( replacement );
       def isEmpty                                     : Boolean           = DefaultThrowingOps.isEmpty( target );
       def isLeftBiased                                : Boolean           = DefaultThrowingOps.isLeftBias;
       def isRightBiased                               : Boolean           = DefaultThrowingOps.isRightBias;
@@ -1069,20 +1067,6 @@ object Either {
           */
         def xmap[Z]( f : A => Z )                       : Either[Z,B]       = opsTypeClass.xmap( target )( f );
         /**
-          * If the target right-biased `Either` is a `Left` containing the empty token,
-          * returns a `Left` containing `replacement`. Otherwise returns the target `Either` unchanged.
-          *
-          * {{{
-          * // with empty token Int -1
-          * 
-          * Left(12).replaceIfEmpty(99)  // Left(12)
-          * Left(-1).replaceIfEmpty(99)  // Left(99)
-          * Right(12).replaceIfEmpty(99) // Right(12)
-          * Right(-1).replaceIfEmpty(99) // Right(-1)
-          * }}}
-          */
-        def replaceIfEmpty[AA>:A]( replacement : =>AA ) : Either[AA,B]      = opsTypeClass.replaceIfEmpty[A,AA,B]( target )( replacement );
-        /**
           * Returns `true` when called on a wrapper representing a left-biased `Either`, `false` otherwise.
           */
         def isLeftBiased                                : Boolean           = opsTypeClass.isLeftBias;
@@ -1116,10 +1100,20 @@ object Either {
 
         def isEmpty[A>:E,B]( target : Either[A,B] ) : Boolean;
 
+        final case class EmptyReplacementIdentity[EE>:E, B]( val replacement : EE ) extends Function1[B,Either[EE,B]] {
+          def apply( b : B ) : Either[EE,B] = Right(b)
+        }
+        def replaceIfEmpty[EE>:E, B]( replacement : EE ) : B => Either[EE,B] = EmptyReplacementIdentity[EE,B]( replacement );
+
         // monad ops
         def flatMap[A>:E,AA>:A,B,Z]( target : Either[A,B] )( f : B => Either[AA,Z] ) : Either[AA,Z] = {
           target match {
-            case Left( _ )  => target.asInstanceOf[Left[A,Z]]
+            case Left( a )  => {
+              f match {
+                case EmptyReplacementIdentity( replacement ) if isEmpty( target ) => Left( replacement )
+                case _ => target.asInstanceOf[Left[A,Z]]
+              }
+            }
             case Right( b ) => f( b )
           }
         }
@@ -1196,9 +1190,6 @@ object Either {
             case Left( a )  => Left( f( a ) )
             case Right( _ ) => target.asInstanceOf[Right[Z,B]]
           }
-        }
-        def replaceIfEmpty[A>:E,AA>:A,B]( target : Either[A,B] )( replacement : =>AA ) : Either[AA,B] = {
-          if (isEmpty( target )) Left( replacement ) else target;
         }
         def isLeftBias  : Boolean = false;
 
@@ -1393,7 +1384,6 @@ object Either {
     *   def xget                                         : B
     *   def xgetOrElse[BB>:B]( or : =>BB )               : BB
     *   def xmap[Z]( f : B => Z )                        : Either[A,Z]
-    *   def replaceIfEmpty[BB>:B]( replacement : =>BB )  : Either[A,BB]
     *   def isEmpty                                      : Boolean          
     *   def isLeftBiased                                 : Boolean
     *   def isRightBiased                                : Boolean
@@ -1585,7 +1575,6 @@ object Either {
       def xget                                        : B                 = DefaultThrowingOps.xget( target );
       def xgetOrElse[BB>:B]( or : =>BB )              : BB                = DefaultThrowingOps.xgetOrElse[A,B,BB]( target )( or );
       def xmap[Z]( f : B => Z )                       : Either[A,Z]       = DefaultThrowingOps.xmap( target )( f );
-      def replaceIfEmpty[BB>:B]( replacement : =>BB ) : Either[A,BB]      = DefaultThrowingOps.replaceIfEmpty[A,B,BB]( target )( replacement )
       def isLeftBiased                                : Boolean           = DefaultThrowingOps.isLeftBias;
       def isRightBiased                               : Boolean           = DefaultThrowingOps.isRightBias;
       def conformsToBias                              : Boolean           = DefaultThrowingOps.conformsToBias( target );
@@ -1792,20 +1781,6 @@ object Either {
           */
         def xmap[Z]( f : B => Z ) : Either[A,Z] = opsTypeClass.xmap( target )( f );
         /**
-          * If the target left-biased `Either` is a `Right` containing the empty token,
-          * returns a `Right` containing `replacement`. Otherwise returns the target `Either` unchanged.
-          *
-          * {{{
-          * // with empty token Int -1
-          * 
-          * Left(12).replaceIfEmpty(99)  // Left(12)
-          * Left(-1).replaceIfEmpty(99)  // Left(-1)
-          * Right(12).replaceIfEmpty(99) // Right(12)
-          * Right(-1).replaceIfEmpty(99) // Right(99)
-          * }}}
-          */
-        def replaceIfEmpty[BB>:B]( replacement : =>BB ) : Either[A,BB] = opsTypeClass.replaceIfEmpty[A,B,BB]( target )( replacement )
-        /**
           * Returns `true` when called on a wrapper representing a left-biased `Either`, `false` otherwise.
           */
         def isLeftBiased : Boolean = opsTypeClass.isLeftBias;
@@ -1849,13 +1824,23 @@ object Either {
          */ 
         protected def rightEmpty : Right[Nothing,E]; 
 
-        def isEmpty[A>:E,B]( target : Either[A,B] ) : Boolean;
+        def isEmpty[A,B>:E]( target : Either[A,B] ) : Boolean;
+
+        final case class EmptyReplacementIdentity[A, EE>:E]( val replacement : EE ) extends Function1[A,Either[A,EE]] {
+          def apply( a : A ) : Either[A,EE] = Left(a)
+        }
+        def replaceIfEmpty[A, EE>:E]( replacement : EE ) : A => Either[A,EE] = EmptyReplacementIdentity[A,EE]( replacement );
 
         // monad ops
-        def flatMap[A, B>:E, BB>:B ,Z]( target : Either[A,B] )( f : A => Either[Z,BB] ) : Either[Z,BB] = {
+        def flatMap[A, B>:E, BB>:B, Z]( target : Either[A,B] )( f : A => Either[Z,BB] ) : Either[Z,BB] = {
           target match {
             case Left( a )  => f( a )
-            case Right( _ ) => target.asInstanceOf[Right[Z,B]]
+            case Right( _ ) => {
+              f match {
+                case EmptyReplacementIdentity( replacement ) if isEmpty( target ) => Right( replacement )
+                case _ => target.asInstanceOf[Right[Z,B]]
+              }
+            }
           }
         }
         def map[A, B>:E, Z]( target : Either[A,B] )( f : A => Z ) : Either[Z,B] = {
@@ -1932,9 +1917,6 @@ object Either {
             case Right( b ) => Right( f(b) )
           }
         }
-        def replaceIfEmpty[A,B>:E,BB>:B]( target : Either[A,B] )( replacement : =>BB ) : Either[A,BB] = {
-          if (isEmpty( target )) Right( replacement ) else target;
-        }
         def isLeftBias  : Boolean = true;
 
         implicit def toOps[A,B>:E]( target : Either[A,B] ) : LeftBias.withEmptyToken.Ops[A,B] = new LeftBias.withEmptyToken.Ops[A,B]( target )( this )
@@ -1988,7 +1970,7 @@ object Either {
     final class withEmptyToken[+E] private( override val empty : E ) extends withEmptyToken.Generic[E] {
       override protected val rightEmpty : Right[Nothing,E] = Right(empty);
 
-      override def isEmpty[A>:E,B]( target : Either[A,B] ) : Boolean = (target == rightEmpty);
+      override def isEmpty[A,B>:E]( target : Either[A,B] ) : Boolean = (target == rightEmpty);
     }
     /**
       * May be extended by classes, objects, traits, and packages (via package objects).
@@ -2126,4 +2108,6 @@ object Either {
   private val NoSuchRightMessage = "Can't get a value from a right-biased Either which is in fact a Left.";
   private val NoSuchXLeftMessage = "This right-biased either is in fact a Right. xget requires a value against its bias."
   private val NoSuchXRightMessage = "This left-biased either is in fact a Left. xget requires a value against its bias."
+
+  sealed trait Crossmapping;
 }

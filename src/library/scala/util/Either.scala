@@ -1103,7 +1103,11 @@ object Either {
         final case class EmptyReplacementIdentity[EE>:E, B]( val replacement : EE ) extends Function1[B,Either[EE,B]] {
           def apply( b : B ) : Either[EE,B] = Right(b)
         }
-        def replaceIfEmpty[EE>:E, B]( replacement : EE ) : B => Either[EE,B] = EmptyReplacementIdentity[EE,B]( replacement );
+        def emptyReplacementIdentity[EE>:E, B]( replacement : EE ) : B => Either[EE,B] = EmptyReplacementIdentity[EE,B]( replacement );
+
+        implicit class ReplaceIfEmptyAdapter[EE >:E, B]( mbGoodValue : B ) extends AnyVal {
+          def replaceIfEmpty( replacement : EE )
+        }
 
         // monad ops
         def flatMap[A>:E,AA>:A,B,Z]( target : Either[A,B] )( f : B => Either[AA,Z] ) : Either[AA,Z] = {

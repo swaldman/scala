@@ -727,25 +727,28 @@ object Either {
     * }}}
     *  That's fine, but if anything goes wrong, clients will receive a value `None`, and have no specific information
     *  about what the problem was. Instead of option, we might try to use Either, defining error codes
-    *  for things that can go wrong. (We'll let our error codes be `Int` for this example, but ''errors should 
-    *  be represented by descriptive kinds of object in real applications.'') Conventionally,
+    *  for things that can go wrong. Conventionally,
     *  we'll let good values arrive as `Right` values and embed our error codes in `Left` objects.
     * {{{
-    *     val ErrIO               = 1
-    *     val ErrNoParse          = 2
-    *     val ErrBadYear          = 3
-    *     val ErrProcessorFailure = 4
+    *     object Error {
+    *       case object Empty extends Error;
+    *       case class IO( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case class NoParse( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case object BadYear extends Error;
+    *       case class ProcessorFailure( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *     }
+    *     sealed trait Error;
     * 
     *     case class Record( opCode : Int, data : Seq[Byte], year : Int )
     *     trait Result
     * 
-    *     def loadURL( url : String )                   : Either[Int,Seq[Byte]] = ??? // fails w/ErrIO
-    *     def parseRecord( bytes : Seq[Byte] )          : Either[Int,Record]    = ??? // fails w/ErrNoParse
-    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Int,Result]    = ??? // fails w/ErrProcessorFailure
+    *     def loadURL( url : String )                   : Either[Error,Seq[Byte]] = ??? // fails w/Error.IO
+    *     def parseRecord( bytes : Seq[Byte] )          : Either[Error,Record]    = ??? // fails w/Error.NoParse
+    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Error,Result]    = ??? // fails w/Error.ProcessorFailure
     * 
     *     // we try to use the right projection but the
     *     // for comprehension fails to compile
-    *     def processURL( url : String ) : Either[Int,Result] = {
+    *     def processURL( url : String ) : Either[Error,Result] = {
     *       for {
     *         rawBytes                     <- loadURL( url ).right
     *         Record( opCode, data, year ) <- parseRecord( rawBytes ).right
@@ -758,25 +761,28 @@ object Either {
     * 
     *   Instead, we can right-bias the `Either`:
     * {{{
-    *     val ErrEmpty            = -1
-    *     val ErrIO               =  1
-    *     val ErrNoParse          =  2
-    *     val ErrBadYear          =  3
-    *     val ErrProcessorFailure =  4
+    *     object Error {
+    *       case object Empty extends Error;
+    *       case class IO( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case class NoParse( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case object BadYear extends Error;
+    *       case class ProcessorFailure( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *     }
+    *     sealed trait Error;
     * 
     *     // right-bias Either 
-    *     val RightBias = Either.RightBias.withEmptyToken( ErrEmpty ) 
+    *     val RightBias = Either.RightBias.withEmptyToken( Error.Empty ) 
     *     import RightBias._
     * 
     *     case class Record( opCode : Int, data : Seq[Byte], year : Int )
     *     trait Result
     * 
-    *     def loadURL( url : String )                   : Either[Int,Seq[Byte]] = ??? // fails w/ErrIO
-    *     def parseRecord( bytes : Seq[Byte] )          : Either[Int,Record]    = ??? // fails w/ErrNoParse
-    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Int,Result]    = ??? // fails w/ErrProcessorFailure
+    *     def loadURL( url : String )                   : Either[Error,Seq[Byte]] = ??? // fails w/Error.IO
+    *     def parseRecord( bytes : Seq[Byte] )          : Either[Error,Record]    = ??? // fails w/Error.NoParse
+    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Error,Result]    = ??? // fails w/Error.ProcessorFailure
     * 
     *     // use Either directly, rather than a projection, in the for comprehension
-    *     def processURL( url : String ) : Either[Int,Result] = {
+    *     def processURL( url : String ) : Either[Error,Result] = {
     *       for {
     *         rawBytes                     <- loadURL( url )
     *         Record( opCode, data, year ) <- parseRecord( rawBytes )
@@ -785,8 +791,8 @@ object Either {
     *     }
     * }}}
     * 
-    *   There is a problem: `ErrEmpty`, would be the result of the year filter failing, 
-    *   when it should be `ErrBadYear`. 
+    *   There is a problem: `Error.Empty`, would be the result of the year filter failing, 
+    *   when it should be `Error.BadYear`. 
     * 
     *   The most general and straightforward wat to fix this is to replace empty
     *   tokens as they arrive with more informative errors. For this purpose,
@@ -802,7 +808,7 @@ object Either {
     *           result                       <- process( opCode, data ) if year >= 2011
     *         } yield result
     *       }
-    *       processed.replaceIfEmpty( ErrBadYear )
+    *       processed.replaceIfEmpty( Error.BadYear )
     *     }
     * }}}
     * 
@@ -811,8 +817,8 @@ object Either {
     *   for separate contexts.
     * 
     * {{{
-    *     val ProcessURLBias       = Either.RightBias.withEmptyToken( ErrBadYear ) 
-    *     val EnableHyperdriveBias = Either.RightBias.withEmptyToken( ErrSpaceTimeRupture )
+    *     val ProcessURLBias       = Either.RightBias.withEmptyToken( Error.BadYear ) 
+    *     val EnableHyperdriveBias = Either.RightBias.withEmptyToken( Error.SpaceTimeRupture )
     *     ...
     * 
     *     def processURL( url : String ) : Either[Int,Result] = {
@@ -1258,7 +1264,7 @@ object Either {
       * '''If you are using polymorphic error types, be sure to specify the type
       *  argument to Base, as too narrow a type may be inferred from a token
       *  of a derived type.'''
-      *  In English, this means you should extend `Either.RightBias.Base[Err]( ErrEmpty )`, not just `Either.RightBias.Base( ErrEmpty )`.
+      *  In English, this means you should extend `Either.RightBias.Base[Error]( Error.Empty )`, not just `Either.RightBias.Base( Error.Empty )`.
       * 
       * ''Note: Entities that do not need to extend another class can extend the abstract
       * class [[Either.RightBias.Base]], which allows definition of the Empty token in the
@@ -1450,25 +1456,28 @@ object Either {
     * }}}
     *  That's fine, but if anything goes wrong, clients will receive a value `None`, and have no specific information
     *  about what the problem was. Instead of option, we might try to use Either, defining error codes
-    *  for things that can go wrong. (We'll let our error codes be `Int` for this example, but ''errors should 
-    *  be represented by descriptive kinds of object in real applications.'') Unconventionally (since we are considering left-biased
+    *  for things that can go wrong. Unconventionally (since we are considering left-biased
     *  `Either` here), we'll let good values arrive as `Left` values and embed our error codes in `Right` objects.
     * {{{
-    *     val ErrIO               = 1
-    *     val ErrNoParse          = 2
-    *     val ErrBadYear          = 3
-    *     val ErrProcessorFailure = 4
+    *     object Error {
+    *       case object Empty extends Error;
+    *       case class IO( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case class NoParse( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case object BadYear extends Error;
+    *       case class ProcessorFailure( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *     }
+    *     sealed trait Error;
     * 
     *     case class Record( opCode : Int, data : Seq[Byte], year : Int )
     *     trait Result
     * 
-    *     def loadURL( url : String )                   : Either[Seq[Byte],Int] = ??? // fails w/ErrIO
-    *     def parseRecord( bytes : Seq[Byte] )          : Either[Record,Int]    = ??? // fails w/ErrNoParse
-    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Result,Int]    = ??? // fails w/ErrProcessorFailure
+    *     def loadURL( url : String )                   : Either[Seq[Byte],Error] = ??? // fails w/Error.IO
+    *     def parseRecord( bytes : Seq[Byte] )          : Either[Record,Error]    = ??? // fails w/Error.NoParse
+    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Result,Error]    = ??? // fails w/Error.ProcessorFailure
     * 
     *     // we try to use the left projection but the
     *     // for comprehension fails to compile
-    *     def processURL( url : String ) : Either[Result,Int] = {
+    *     def processURL( url : String ) : Either[Result,Error] = {
     *       for {
     *         rawBytes                     <- loadURL( url ).left
     *         Record( opCode, data, year ) <- parseRecord( rawBytes ).left
@@ -1481,25 +1490,28 @@ object Either {
     * 
     *   Instead, we can left-bias the `Either`:
     * {{{
-    *     val ErrEmpty            = -1
-    *     val ErrIO               =  1
-    *     val ErrNoParse          =  2
-    *     val ErrBadYear          =  3
-    *     val ErrProcessorFailure =  4
+    *     object Error {
+    *       case object Empty extends Error;
+    *       case class IO( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case class NoParse( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *       case object BadYear extends Error;
+    *       case class ProcessorFailure( message : String, stackTrace : List[StackTraceElement] = Nil ) extends Error;
+    *     }
+    *     sealed trait Error;
     * 
     *     // left-bias Either 
-    *     val LeftBias = Either.LeftBias.withEmptyToken( ErrEmpty ) 
+    *     val LeftBias = Either.LeftBias.withEmptyToken( Error.Empty ) 
     *     import LeftBias._
     * 
     *     case class Record( opCode : Int, data : Seq[Byte], year : Int )
     *     trait Result
     * 
-    *     def loadURL( url : String )                   : Either[Seq[Byte],Int] = ??? // fails w/ErrIO
-    *     def parseRecord( bytes : Seq[Byte] )          : Either[Record,Int]    = ??? // fails w/ErrNoParse
-    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Result,Int]    = ??? // fails w/ErrProcessorFailure
+    *     def loadURL( url : String )                   : Either[Seq[Byte],Error] = ??? // fails w/Error.IO
+    *     def parseRecord( bytes : Seq[Byte] )          : Either[Record,Error]    = ??? // fails w/Error.NoParse
+    *     def process( opCode : Int, data : Seq[Byte] ) : Either[Result,Error]    = ??? // fails w/Error.ProcessorFailure
     * 
     *     // use Either directly, rather than a projection, in the for comprehension
-    *     def processURL( url : String ) : Either[Result,Int] = {
+    *     def processURL( url : String ) : Either[Result,Error] = {
     *       for {
     *         rawBytes                     <- loadURL( url )
     *         Record( opCode, data, year ) <- parseRecord( rawBytes )
@@ -1508,8 +1520,8 @@ object Either {
     *     }
     * }}}
     * 
-    *   There is a problem: `ErrEmpty`, would be the result of the year filter failing, 
-    *   when it should be `ErrBadYear`. 
+    *   There is a problem: `Error.Empty`, would be the result of the year filter failing, 
+    *   when it should be `Error.BadYear`. 
     * 
     *   The most general and straightforward wat to fix this is to replace empty
     *   tokens as they arrive with more informative errors. For this purpose,
@@ -1517,7 +1529,7 @@ object Either {
     * 
     * {{{
     *     // use Either directly, rather than a projection, in the for comprehension
-    *     def processURL( url : String ) : Either[Result,Int] = {
+    *     def processURL( url : String ) : Either[Result,Error] = {
     *       val processed = {
     *         for {
     *           rawBytes                     <- loadURL( url )
@@ -1525,7 +1537,7 @@ object Either {
     *           result                       <- process( opCode, data ) if year >= 2011
     *         } yield result
     *       }
-    *       processed.replaceIfEmpty( ErrBadYear )
+    *       processed.replaceIfEmpty( Error.BadYear )
     *     }
     * }}}
     * 
@@ -1534,8 +1546,8 @@ object Either {
     *   for separate contexts.
     * 
     * {{{
-    *     val ProcessURLBias       = Either.LeftBias.withEmptyToken( ErrBadYear ) 
-    *     val EnableHyperdriveBias = Either.LeftBias.withEmptyToken( ErrSpaceTimeRupture )
+    *     val ProcessURLBias       = Either.LeftBias.withEmptyToken( Error.BadYear ) 
+    *     val EnableHyperdriveBias = Either.LeftBias.withEmptyToken( Error.SpaceTimeRupture )
     *     ...
     * 
     *     def processURL( url : String ) : Either[Result,Int] = {
@@ -2004,7 +2016,7 @@ object Either {
       * '''If you are using polymorphic error types, be sure to specify the type
       *  argument to Base, as too narrow a type may be inferred from a token
       *  of a derived type.''' 
-      *  In English, this means you should extend `Either.LeftBias.Base[Err]( ErrEmpty )`, not just `Either.LeftBias.Base( ErrEmpty )`.
+      *  In English, this means you should extend `Either.LeftBias.Base[Error]( Error.Empty )`, not just `Either.LeftBias.Base( Error.Empty )`.
       * 
       * ''Note: Entities that do not need to extend another class can extend the abstract
       * class [[Either.LeftBias.Base]], which allows defining the Empty token in the
